@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Class-Path: lib/PNGDecoder.jar lib/jinput.jar lib/lwjgl.jar lib/lwjgl_
+ util.jar lib/gluegen-rt.jar lib/joal.jar lib/slick-util.jar
+X-COMMENT: Main-Class will be added automatically by build
+
