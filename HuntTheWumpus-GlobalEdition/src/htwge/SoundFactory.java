@@ -1,10 +1,8 @@
 package htwge;
 
-import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
+import java.net.URL;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
@@ -18,6 +16,7 @@ import org.lwjgl.util.WaveData;
 
 public class SoundFactory {
 
+    private static final ClassLoader loader = SoundFactory.class.getClassLoader();
     public static final String A_MUSIC = "music_darkestchild_incompetech.wav";
     public static final String A_HEART_FAST = "loop_heartbeat_fast.wav";
     public static final String A_HEART_MED = "loop_heartbeat.wav";
@@ -31,8 +30,28 @@ public class SoundFactory {
     public static final String A_BUMP = "bump.wav";
     public static final String A_STATIC = "loop_static.wav";
     public static final String A_STEP = "step.wav";
+    public static final String A_AMMO = "ammo.wav";
     public static final HashMap<String, Integer> sourcemap = new HashMap<String, Integer>();
     public static final HashSet<String> playing = new HashSet<String>();
+
+    static class FileListFilter implements FilenameFilter {
+
+        private String extension;
+
+        public FileListFilter(String extension) {
+            this.extension = extension;
+        }
+
+        public boolean accept(File directory, String filename) {
+            boolean fileOK = true;
+
+            if (extension != null) {
+                fileOK &= filename.endsWith('.' + extension);
+            }
+            return fileOK;
+        }
+    }
+    private static boolean initok = false;
     public static final HashSet<String> important = new HashSet<String>() {
 
         {
@@ -76,16 +95,16 @@ public class SoundFactory {
             put(A_BUMP, 1.0f);
             put(A_STATIC, 0.5f);
             put(A_STEP, 0.5f);
+            put(A_AMMO, 1.0f);
         }
     };
     public static final int MAX_BUFFERS = 128;
     public static final ArrayList<String> soundsToProcess = new ArrayList<String>();
     public static final ArrayList<String> serverSoundList = new ArrayList<String>();
-    private static final FilenameFilter filter = new FileListFilter("sound file extension", "wav");
-    private static final String[] soundFiles = new File("./sounds").list(filter);
+    private static String[] soundFiles;
     private static ArrayList<String> accessFiles = new ArrayList<String>();
     /** Buffers hold sound data. */
-    private static IntBuffer buffer = BufferUtils.createIntBuffer(soundFiles.length);
+    private static IntBuffer buffer;
     /** Sources are points emitting sound. */
     private static IntBuffer source = BufferUtils.createIntBuffer(MAX_BUFFERS);
     /** Position of the source sound. */
@@ -104,6 +123,28 @@ public class SoundFactory {
 
     static void init() {
 
+        Main.debug("file.separator: " + System.getProperty("file.separator"));
+        // load list from jar (jnlp support)
+        // getClass().getClassLoader().getResource
+        //URL url = SoundFactory.class.getResource(System.getProperty("file.separator")+"sounds");
+        URL url = SoundFactory.class.getClassLoader().getResource("sounds");
+
+        if (url == null) {
+            System.err.println("Unable to locate sounds and form URL");
+            initok = false;
+            return;
+        }
+        File directory = new File(url.getFile());
+        FileListFilter filter = new FileListFilter("wav");
+        soundFiles = directory.list(filter);
+        if (soundFiles != null) {
+            buffer = BufferUtils.createIntBuffer(soundFiles.length);
+        } else {
+            System.err.println("Unable to locate sounds");
+            initok = false;
+            return;
+        }
+
         sourcePos.flip();
         sourcePosLeft.flip();
         sourcePosRight.flip();
@@ -121,12 +162,12 @@ public class SoundFactory {
 
         // Load the wav data.
         if (loadALData() == AL10.AL_FALSE) {
-            if (Main.DEBUG) {
-                System.err.println("[AL] Error loading wave data.");
-            }
+            Main.debug("[AL] Error loading wave data.");
         }
 
         setListenerValues();
+
+        initok = true;
     }
 
     static int loadALData() {
@@ -136,26 +177,19 @@ public class SoundFactory {
 
         int errcode = AL10.alGetError();
         if (errcode != AL10.AL_NO_ERROR) {
-            if (Main.DEBUG) {
-                System.err.println("[AL] A Error code: " + errcode);
-            }
+            Main.debug("[AL] A Error code: " + errcode);
             return AL10.AL_FALSE;
         }
 
         WaveData waveFile = null;
 
         for (int i = 0; i < soundFiles.length; i++) {
-            if (Main.DEBUG) {
-                System.out.println("[AL] Adding sound file: " + soundFiles[i]);
-            }
+            Main.debug("[AL] Adding sound file: " + soundFiles[i]);
             accessFiles.add(i, soundFiles[i]);
 
-            try {
-                waveFile = WaveData.create(new BufferedInputStream(new FileInputStream("./sounds/" + soundFiles[i])));
-            } catch (FileNotFoundException e) {
-                System.err.println(e.getMessage());
-                e.printStackTrace(System.err);
-            }
+            URL url = Main.class.getResource("/sounds/" + soundFiles[i]);
+            waveFile = WaveData.create(url);
+
             if (buffer == null) {
                 System.err.println("AL buffer is null");
                 System.exit(1);
@@ -174,31 +208,30 @@ public class SoundFactory {
         if (errcode == AL10.AL_NO_ERROR) {
             return AL10.AL_TRUE;
         } else {
-            if (Main.DEBUG) {
-                System.err.println("[AL] B ERROR CODE: " + errcode);
-            }
+            Main.debug("[AL] B ERROR CODE: " + errcode);
             return AL10.AL_FALSE;
         }
     }
 
     static private void addSource(int type, boolean repeat, float definedgain, String file, FloatBuffer sp) {
-        int position = source.position();
-        if (Main.DEBUG) {
-            System.out.println("[AL] source position for " + file + " " + position);
+
+        if (!initok) {
+            return;
         }
+
+        int position = source.position();
+        Main.debug("[AL] source position for " + file + " " + position);
         source.limit(position + 1);
         AL10.alGenSources(source);
 
         int alerror = AL10.alGetError();
         if (alerror != AL10.AL_NO_ERROR) {
-            System.out.println("[AL] Error generating audio source. " + alerror + " " + file+" "+source.get(position));
+            System.out.println("[AL] Error generating audio source. " + alerror + " " + file + " " + source.get(position));
             Main.fakeTrace();
             System.exit(-1);
         }
 
-        if (Main.DEBUG) {
-            System.out.println("[AL] adding to sourcemap " + file + " " + source.get(position));
-        }
+        Main.debug("[AL] adding to sourcemap " + file + " " + source.get(position));
         sourcemap.put(file, source.get(position));
 
         AL10.alSourcei(source.get(position), AL10.AL_BUFFER, buffer.get(type));
@@ -223,9 +256,8 @@ public class SoundFactory {
 
     public static void killALData() {
         // set to 0, num_sources
-        if (Main.DEBUG) {
-            System.out.println("[AL] Cleaning up all OpenAL data");
-        }
+        Main.debug("[AL] Cleaning up all OpenAL data");
+
         for (int i : sourcemap.values()) {
             AL10.alSourceStop(i);
         }
@@ -233,45 +265,49 @@ public class SoundFactory {
         if (source != null) {
             int position = source.position();
             source.position(0).limit(position);
-            AL10.alDeleteSources(source);
-            AL10.alDeleteBuffers(buffer);
+            if (initok) {
+                AL10.alDeleteSources(source);
+                source.clear();
+                AL10.alDeleteBuffers(buffer);
+                buffer.clear();
+            }
         }
-
-        buffer.clear();
-        source.clear();
 
         AL.destroy();
 
-        if (Main.DEBUG) {
-            System.out.println("[AL] Cleanup complete");
-        }
+        Main.debug("[AL] Cleanup complete");
     }
 
     public static void play(String file, boolean loop, float gain) {
-        if (Main.DEBUG) {
-            System.out.println("[AL] >) (< CENTER playing (" + loop + ") " + file);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("[AL] >) (< CENTER playing (" + loop + ") " + file);
 
         if (sourcemap.containsKey(file)) {
             AL10.alSourcef(sourcemap.get(file), AL10.AL_GAIN, gain >= 0 ? gain : gains.get(file));
+            AL10.alSource(sourcemap.get(file), AL10.AL_POSITION, sourcePos);
             AL10.alSourcePlay(sourcemap.get(file));
             playing.add(file);
-            if (Main.DEBUG) {
-                System.out.println("playing already added source " + file + " " + sourcemap.get(file));
-            }
+            Main.debug("playing already added source " + file + " " + sourcemap.get(file));
         } else {
-            if (Main.DEBUG) {
-                System.out.println("adding new source " + file + " " + sourcemap.get(file));
-            }
+            Main.debug("adding new source " + file + " " + sourcemap.get(file));
             addSource(accessFiles.indexOf(file), loop, gain >= 0 ? gain : gains.get(file), file, sourcePos);
         }
     }
 
     public static void playLeft(String file, boolean loop) {
-        if (Main.DEBUG) {
-            System.out.println("[AL] >) LEFT playing (" + loop + ") " + file);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("[AL] >) LEFT playing (" + loop + ") " + file);
+
         if (sourcemap.containsKey(file)) {
+            AL10.alSource(sourcemap.get(file), AL10.AL_POSITION, sourcePosLeft);
             AL10.alSourcePlay(sourcemap.get(file));
             playing.add(file);
         } else {
@@ -280,10 +316,15 @@ public class SoundFactory {
     }
 
     public static void playRight(String file, boolean loop) {
-        if (Main.DEBUG) {
-            System.out.println("[AL] (< RIGHT playing (" + loop + ") " + file);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("[AL] (< RIGHT playing (" + loop + ") " + file);
+
         if (sourcemap.containsKey(file)) {
+            AL10.alSource(sourcemap.get(file), AL10.AL_POSITION, sourcePosRight);
             AL10.alSourcePlay(sourcemap.get(file));
             playing.add(file);
         } else {
@@ -292,17 +333,25 @@ public class SoundFactory {
     }
 
     public static void stop(String file) {
-        if (Main.DEBUG) {
-            System.out.println("[AL] Stop " + file);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("[AL] Stop " + file);
+
         AL10.alSourceStop(sourcemap.get(file));
         playing.remove(file);
     }
 
     public static void stopLooping(String file) {
-        if (Main.DEBUG) {
-            System.out.println("[AL] Stop " + file);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("[AL] Stop " + file);
+
         if (playing.contains(file)) {
             AL10.alSourceStop(sourcemap.get(file));
             playing.remove(file);
@@ -310,13 +359,21 @@ public class SoundFactory {
     }
 
     public static void setGain(String file, float gain) {
-        if (Main.DEBUG) {
-            System.out.println("Setting gain of " + file + " to " + gain);
+
+        if (!initok) {
+            return;
         }
+
+        Main.debug("Setting gain of " + file + " to " + gain);
+
         AL10.alSourcef(sourcemap.get(file), AL10.AL_GAIN, gain);
     }
 
     public static void stopAllButTheMusic() {
+
+        if (!initok) {
+            return;
+        }
 
         for (String f : sourcemap.keySet()) {
             if (!f.contains("music")) {
@@ -326,6 +383,10 @@ public class SoundFactory {
     }
 
     public synchronized static void smashTV() {
+
+        if (!initok) {
+            return;
+        }
 
         if (!playing.contains(A_STATIC)) {
             play(A_STATIC, true, gains.get(A_STATIC));
@@ -343,23 +404,5 @@ public class SoundFactory {
                 stop(s);
             }
         }
-    }
-}
-
-class FileListFilter implements FilenameFilter {
-
-    private String extension;
-
-    public FileListFilter(String name, String extension) {
-        this.extension = extension;
-    }
-
-    public boolean accept(File directory, String filename) {
-        boolean fileOK = true;
-
-        if (extension != null) {
-            fileOK &= filename.endsWith('.' + extension);
-        }
-        return fileOK;
     }
 }

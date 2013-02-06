@@ -11,7 +11,6 @@ import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -32,6 +31,7 @@ public class Network implements Runnable {
     private final String CMD_SCOREBOARDTAG = ";T";
     private final String CMD_CLEAR = ";U";
     private final String CMD_RESET = ";Z";
+    private final String S_FIRESHOTGUN = "You fire your shotgun to the";
     private final String S_WAITING_FOR_PLAYERS = "Waiting for other players";
     /** Threads */
     private Thread threadRead;
@@ -57,6 +57,8 @@ public class Network implements Runnable {
     private boolean wumpusdead = false;
     private boolean importantsounds = false;
     private boolean pauseforshotgun = false;
+    private int spas12ammo = 8 + 1; // 8 in the mag, one in the chamber
+    public boolean firstresetroom = false;
 
     public Network(final String SERVERIP, final int SERVERPORT, final int MAXHISTORYLINES) {
         this.SERVERIP = SERVERIP;
@@ -103,9 +105,8 @@ public class Network implements Runnable {
                         history.add(rc);
                     }
                 }
-                if (Main.DEBUG) {
-                    System.err.println("[NETWORK] Reconnecting: " + e.getMessage());
-                }
+                Main.debug("[NETWORK] Reconnecting: " + e.getMessage());
+
                 if (sock != null) {
                     if (!sock.isClosed()) {
                         try {
@@ -115,23 +116,14 @@ public class Network implements Runnable {
                         }
                     }
                 }
-                pause();
+                pause(500);
             }
-        }
-    }
-
-    void pause() {
-        try {
-            Thread.sleep(500);
-        } catch (InterruptedException ie) {
         }
     }
 
     public void run() {
 
-        if (Main.DEBUG) {
-            System.out.println("[NET] thread: " + Thread.currentThread().getName());
-        }
+        Main.debug("[NET] thread: " + Thread.currentThread().getName());
 
         if (!connect) {
             openSocket();
@@ -139,14 +131,14 @@ public class Network implements Runnable {
 
         if (WumpusNetworkRead.equals(Thread.currentThread().getName())) {
             while (!connect) {
-                pause();
+                pause(500);
             }
             reading();
         }
 
         if (WumpusNetworkWrite.equals(Thread.currentThread().getName())) {
             while (!connect) {
-                pause();
+                pause(500);
             }
             writing();
         }
@@ -162,17 +154,13 @@ public class Network implements Runnable {
                 addHistory(";GConnected to server " + SERVERIP + ":" + SERVERPORT);
                 String buffer = null;
                 while ((buffer = in.readLine()) != null) {
-                    if (Main.DEBUG) {
-                        System.out.println("[" + new Date() + "] RX:" + buffer);
-                    }
+                    Main.debug("RX:" + buffer);
 
                     if (buffer.indexOf(CMD_SOUND) > -1) {
                         String[] sa = buffer.replaceAll(CMD_SOUND, "").split("\\|");
                         String id = sa[0];
                         String meta = (sa.length > 1 ? sa[1] : null);
-                        if (Main.DEBUG) {
-                            System.out.println("[NET] Metadata for " + buffer + " " + meta);
-                        }
+                        Main.debug("[NET] Metadata for " + buffer + " " + meta);
 
                         if (SoundFactory.important.contains(SoundFactory.map.get(id))) {
                             importantsounds = true;
@@ -218,48 +206,48 @@ public class Network implements Runnable {
                             Main.overlaytext.setLength(0); // prepare for scoreboard
                         }
                     } else if (buffer.indexOf(CMD_RESET) > -1) {
+                        firstresetroom = true;
                         if (wumpusdead) {
-                            try {
-                                Thread.sleep(5000); // allow death, scoreboard, etc
-                            } catch (InterruptedException ie) {
-                            }
+                            pause(5000);// allow death, scoreboard, etc
                         } else if (pauseforshotgun) {
-                            try {
-                                Thread.sleep(1750); // allow death, scoreboard, etc
-                            } catch (InterruptedException ie) {
-                            }
+                            pause(1750);
                         }
                         pauseforshotgun = false;
                         importantsounds = false;
                         SoundFactory.stopAllButTheMusic();
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException ie) {
-                        }
+                        pause(100);
                         wumpusdead = false;
                         Main.overlaytoggle = false;
                     } else if (buffer.indexOf(CMD_CLEAR) > -1) {
                         Main.overlaytoggle = false;
                         history.clear();
+                        firstresetroom = false; // allow gamepad to fire for respawn
                     } else if (buffer.indexOf(CMD_READYTOMOVE) == 0) {
-                        if (Main.DEBUG) {
-                            System.out.println("setting music to gain level, important?="+importantsounds);
-                        }
+                        Main.debug("setting music to gain level, important?=" + importantsounds);
                         SoundFactory.setGain(SoundFactory.A_MUSIC, importantsounds ? 0.25f : 1.0f);
                     } else if (buffer.indexOf(CMD_SCOREBOARDTAG) > -1) {
                         Main.overlaytoggle = true;
-                        Main.overlaytext.append(buffer + "\n");
+                        Main.overlaytext.append(buffer).append("\n");
                         if (buffer.indexOf("Wumpus") > -1) {
                             history.add(buffer);
                         }
                     } else {
-                        if (buffer.indexOf(S_WAITING_FOR_PLAYERS) == 0) {
+                        if (buffer.indexOf(S_WAITING_FOR_PLAYERS) > -1) {
                             waitingforplayers = true;
-                            if (Main.DEBUG) {
-                                System.out.println("[NET] Waiting for players");
-                            }
+                            Main.debug("[NET] Waiting for players");
                         } else {
                             waitingforplayers = false;
+                        }
+
+                        if (buffer.indexOf(S_FIRESHOTGUN) > -1) {
+                            if (spas12ammo > 1) {
+                                spas12ammo--;
+                            } else {
+                                addHistory(";BRELOADING...");
+                                pause(2000);
+                                SoundFactory.play(SoundFactory.A_AMMO, false, -1);
+                                spas12ammo = 8 + 1;
+                            }
                         }
                         addHistory(buffer);
                     }
@@ -267,14 +255,10 @@ public class Network implements Runnable {
 
             } catch (UnknownHostException e) {
                 addHistory(";Runable to connect to server");
-                if (Main.DEBUG) {
-                    System.err.println("A) UnknownHostException: " + e.getMessage());
-                }
+                Main.debug("UnknownHostException: " + e.getMessage());
             } catch (IOException e) {
                 addHistory(";RCould not get connection from server");
-                if (Main.DEBUG) {
-                    System.err.println("B) IOException: " + e.getMessage());
-                }
+                Main.debug("B) IOException: " + e.getMessage());
             } finally {
                 connect = false;
                 firstdisconnect = true;
@@ -313,19 +297,14 @@ public class Network implements Runnable {
                             out.write(s);
                         }
 
-                        if (Main.DEBUG) {
-                            System.out.println("[" + new Date() + "] TX:" + s);
-                        }
+                        Main.debug("TX:" + s);
                         out.flush();
                         addHistory(";B" + s);
                         commands.remove(s);
                     }
                 }
 
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException ie) {
-                }
+                pause(500);
             }
 
         } finally {
@@ -347,7 +326,7 @@ public class Network implements Runnable {
     }
 
     void addHistory(String s) {
-        if (history.size() >= MAXHISTORYLINES) {
+        if (history.size() >= MAXHISTORYLINES-1) {
             history.remove();
         }
 
@@ -359,5 +338,12 @@ public class Network implements Runnable {
         connect = false;
         firstdisconnect = true;
         SoundFactory.smashTV();
+    }
+
+    private void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+        }
     }
 }

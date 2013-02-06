@@ -14,8 +14,12 @@ import java.awt.image.DataBufferInt;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.Properties;
 import javax.swing.JFrame;
+import org.lwjgl.input.Controller;
+import org.lwjgl.input.Controllers;
 
 /**
  *
@@ -23,7 +27,7 @@ import javax.swing.JFrame;
  */
 public class Main extends JFrame {
 
-    static final boolean DEBUG = false;
+    private static boolean DEBUG = true;
     static final String DEFAULT_SERVERIP = "electune.dyndns.org";
     static final int DEFAULT_SERVERPORT = 5000;
     static String S_TITLE = "Hunt The Wumpus : Global Edition";
@@ -35,6 +39,7 @@ public class Main extends JFrame {
     static int[] c; // colour palette
     static char[] PX; // stored graphics data
     static int[] px; // screen pixel data (_wx_h in size)
+    static int[] pxblank; // used for blanking the screen (arraycopy)
     static int _w = 1280;
     static int _h = 760;
     static Graphics r;
@@ -61,7 +66,8 @@ public class Main extends JFrame {
     private static final StringBuilder console = new StringBuilder();
     private static Network network;
     private static final String CMD_PLAYERS = "PLAYERS";
-    private static final String CMD_MOVE = "MOVE";
+    static final String CMD_MOVE = "MOVE";
+    private static final String CMD_SHOOT = "SHOOT";
     private static Properties properties;
     /** smashTV */
     private static char[] wumpus;
@@ -69,9 +75,26 @@ public class Main extends JFrame {
     private static int tuner = 1;
     private static long tuned = System.currentTimeMillis();
     /** overlay */
-    public static boolean overlaytoggle = false;
-    public static StringBuilder overlaytext = new StringBuilder();
+    static boolean overlaytoggle = false;
+    static StringBuilder overlaytext = new StringBuilder();
     private static boolean running = true;
+    /** controllers/jinput */
+    private static ArrayList<String> alControllers = new ArrayList<String>();
+    private static boolean controllerselected = false;
+    private static String selectedController;
+    private static StringBuilder controllers = new StringBuilder();
+    private static int selection = -1;
+    private static Controller actualController;
+    private static ArrayList<String> buttons = new ArrayList<String>();
+    private static double[] buttonvalues;
+    private static boolean anybutton = false;
+    private static long anybuttontimer = 0;
+
+    public static void debug(String s) {
+        if (DEBUG) {
+            System.out.println("[" + new Date() + "] " + s);
+        }
+    }
 
     /**
      * @param args the command line arguments
@@ -87,9 +110,22 @@ public class Main extends JFrame {
         o.enableEvents(KeyEvent.KEY_PRESSED | KeyEvent.KEY_RELEASED);
         o.setVisible(true);
 
+        initControllers();
+        formControllersString();
+
         initGraphics(o);
 
-        SoundFactory.init();
+        pause(500);
+
+        try {
+            SoundFactory.init();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+            System.out.println(e.getMessage());
+            System.exit(1);
+        }
+
+        pause(500);
 
         loadProperties();
 
@@ -141,6 +177,12 @@ public class Main extends JFrame {
                 }
             }
 
+            if (alControllers.size() > 0) {
+                Controllers.poll();
+
+                updateControllerDetails();
+            }
+
             if (!network.dead) {
 
                 drawString(getIntArray(";Whunt the ;Rwumpus;W: ;GGlobal ;WEdition"), margin, (linespace * 3), 2);
@@ -172,8 +214,12 @@ public class Main extends JFrame {
                 bloodStaticScreen(true);
             }
 
-            if (overlaytoggle) {
-                overlayScreen(overlaytext.toString());
+            if (overlaytoggle || !controllerselected) {
+                if (!controllerselected) {
+                    overlayScreen(controllers.toString());
+                } else {
+                    overlayScreen(overlaytext.toString());
+                }
             }
 
             r.drawImage(rbi, 0, 0, null);
@@ -181,6 +227,13 @@ public class Main extends JFrame {
         }
 
         cleanup();
+    }
+
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException ie) {
+        }
     }
 
     static void tvStaticScreen(boolean fullscreen) {
@@ -215,8 +268,8 @@ public class Main extends JFrame {
     }
 
     static int wumpusLookup(int x, int y) {
-        x = x % 26;
-        y = y % tuner;
+        x %= 26;
+        y %= tuner;
         // 26 x 25
         if (x >= 0 && x < 26) {
             if (y >= 0 && y < 25) {
@@ -266,10 +319,14 @@ public class Main extends JFrame {
 
             String[] lines = s.split("\n");
 
-            int c = 0;
+            int cnt = 0;
+            int ycentered = ((lines.length * linespace) >> 1);
             for (String x : lines) {
-                drawString(getIntArray(x), scoremargin + 8, scoremargin + 8 + (linespace * c), 2);
-                c++;
+                String trimmed = x.trim();
+                int xcentered = ((trimmed.length() * 14) >> 1);
+
+                drawString(getIntArray(trimmed), (_w >> 1) - xcentered, (_h >> 1) - ycentered + (linespace * cnt), 2);
+                cnt++;
             }
 
         } catch (ArrayIndexOutOfBoundsException e) {
@@ -290,10 +347,7 @@ public class Main extends JFrame {
     }
 
     static void clearScreen() {
-        // TODO: System array copy from 'blank' reference array;
-        for (int i = 0; i < px.length; i++) {
-            px[i] = c[0];
-        }
+        System.arraycopy(pxblank, 0, px, 0, px.length);
     }
 
     static int[] getIntArray(String s) {
@@ -500,6 +554,10 @@ public class Main extends JFrame {
         r = o.getGraphics();
         rbi = new BufferedImage(_w, _h, BufferedImage.TYPE_INT_RGB);
         px = ((DataBufferInt) (rbi.getRaster().getDataBuffer())).getData();
+        pxblank = new int[px.length];
+        for (int i = 0; i < pxblank.length; i++) {
+            pxblank[i] = c[0];
+        }
 
         wumpus = ("11111111122222222111111111"
                 + "11111111222222222211111111"
@@ -533,6 +591,163 @@ public class Main extends JFrame {
         System.exit(0);
     }
 
+    private static void initControllers() {
+
+        try {
+            Controllers.create();
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(0);
+        }
+
+        int count = Controllers.getControllerCount();
+
+        debug("[jinput] " + count + " Controllers Found");
+
+        if (count == 0) {
+            controllerselected = true;
+            return;
+        }
+
+        for (int i = 0; i < count; i++) {
+            actualController = Controllers.getController(i);
+            alControllers.add(actualController.getName()
+                    + " (" + actualController.getButtonCount() + " button, "
+                    + (actualController.getButtonCount() + actualController.getAxisCount() + 2) + " item)");
+            debug("[jinput] " + actualController.getName());
+
+            buttonvalues = new double[actualController.getButtonCount() + actualController.getAxisCount() + 2];
+            buttons.clear();
+            for (int b = 0; b < actualController.getButtonCount(); b++) {
+                debug("[jinput] button: " + actualController.getButtonName(b));
+                buttons.add(actualController.getButtonName(b));
+            }
+
+            for (int j = actualController.getButtonCount();
+                    j < actualController.getButtonCount() + actualController.getAxisCount();
+                    j++) {
+                debug("[jinput] axis: " + actualController.getAxisName(j - actualController.getButtonCount()));
+                buttons.add(actualController.getAxisName(j - actualController.getButtonCount()));
+            }
+
+            buttons.add("povx");
+            buttons.add("povy");
+        }
+    }
+
+    private static void formControllersString() {
+        controllers.setLength(0);
+        controllers.append(selection == -1 ? ";GKeyboard\n" : ";WKeyboard\n");
+        for (int i = 0; i < alControllers.size(); i++) {
+            if (selection == i) {
+                controllers.append(";G");
+            } else {
+                controllers.append(";W");
+            }
+            controllers.append(alControllers.get(i) + "\n");
+        }
+    }
+
+    private static void updateControllerDetails() {
+
+        if (actualController != null) {
+            if (buttonvalues == null) {
+                buttonvalues = new double[actualController.getButtonCount() + actualController.getAxisCount() + 2];
+            }
+            anybutton = false;
+            for (int i = 0; i < actualController.getButtonCount(); i++) {
+                //debug(""+i+": "+buttons.get(i)+" => "+ actualController.isButtonPressed(i));
+                boolean newvalue = actualController.isButtonPressed(i);
+                if (buttonvalues[i] == 0 && newvalue) {
+                    if (!controllerselected) {
+                        SoundFactory.play(SoundFactory.A_SHOTGUN, false, -1);
+                    }
+                    enter(true);
+                }
+                buttonvalues[i] = newvalue ? 1 : 0;
+                if (newvalue) {
+                    anybutton = true;
+                }
+            }
+
+//            if (System.currentTimeMillis() - anybuttontimer >= 2000) {
+//                anybuttontimer = System.currentTimeMillis();
+//            }
+
+            int buttonCount = actualController.getButtonCount();
+            for (int i = buttonCount; i < buttonCount + actualController.getAxisCount(); i++) {
+                //debug(""+i+": "+buttons.get(i)+" => "+ actualController.getAxisValue(i - buttonCount));
+                double newvalue = actualController.getAxisValue(i - buttonCount);
+                if (buttonvalues[i] == 0 && newvalue != 0) {
+
+                    if (i == 13) {
+                        if (!controllerselected) {
+                            SoundFactory.play(SoundFactory.A_BUMP, false, -1);
+                        }
+                        // up and down
+                        if (newvalue < 0) {
+                            up();
+                        } else {
+                            down();
+                        }
+                    } else if (i == 12) {
+
+                        // left and right
+                        if (newvalue < 0) {
+                            if (!controllerselected) {
+                                SoundFactory.playLeft(SoundFactory.A_BUMP, false);
+                            }
+                            left();
+                        } else {
+                            if (!controllerselected) {
+                                SoundFactory.playRight(SoundFactory.A_BUMP, false);
+                            }
+                            right();
+                        }
+                    }
+                }
+                buttonvalues[i] = newvalue;
+            }
+
+            int i = buttonCount + actualController.getAxisCount();
+            float povx_new = actualController.getPovX();
+            if (buttonvalues[i] == 0 && povx_new != 0) {
+
+                if (povx_new < 0) {
+                    if (!controllerselected) {
+                        SoundFactory.playLeft(SoundFactory.A_BUMP, false);
+                    }
+                    left();
+                } else {
+                    if (!controllerselected) {
+                        SoundFactory.playRight(SoundFactory.A_BUMP, false);
+                    }
+                    right();
+                }
+            }
+            buttonvalues[i] = povx_new;
+            //debug(""+i+": "+buttons.get(i)+" => "+ buttonvalues[i]);
+            i++;
+            float povy_new = actualController.getPovY();
+            if (buttonvalues[i] == 0 && povy_new != 0) {
+                if (povy_new < 0) {
+                    up();
+                } else {
+                    down();
+                }
+            }
+            buttonvalues[i] = povy_new;
+            //debug(""+i+": "+buttons.get(i)+" => "+ buttonvalues[i]);
+
+            if (DEBUG) {
+                for (int n = 0; n < buttonvalues.length; n++) {
+                    String s = "" + n + ". " + buttons.get(n) + ":" + buttonvalues[n];
+                    drawString(getIntArray(s), _w - (14 * s.length()), _h - linespace - (linespace * n), 2);
+                }
+            }
+        }
+    }
+
     @Override
     public void processEvent(AWTEvent e) {
 
@@ -541,16 +756,13 @@ public class Main extends JFrame {
                 windowactivated = true;
                 break;
             case ComponentEvent.COMPONENT_RESIZED:
-                if (DEBUG) {
-                    System.out.println(windowactivated + "? component resized: " + ((ComponentEvent) e).paramString());
-                }
+                debug(windowactivated + "? component resized: " + ((ComponentEvent) e).paramString());
+
                 if (windowactivated) {
                     int newwidth = ((ComponentEvent) e).getComponent().getWidth();
                     int newheight = ((ComponentEvent) e).getComponent().getHeight();
-                    if (Main.DEBUG) {
-                        System.out.println("w: " + newwidth);
-                        System.out.println("h: " + newheight);
-                    }
+                    debug("w: " + newwidth);
+                    debug("h: " + newheight);
                     if (_w != newwidth || _h != newheight) {
                         // resize required
                         _w = newwidth;
@@ -565,9 +777,7 @@ public class Main extends JFrame {
                 break;
             case KeyEvent.KEY_PRESSED:
                 keys[((KeyEvent) e).getKeyCode()] = true;
-                if (DEBUG) {
-                    System.out.println("KEY PRESSED: " + ((KeyEvent) e).getKeyCode());
-                }
+                debug("KEY PRESSED: " + ((KeyEvent) e).getKeyCode());
                 switch (((KeyEvent) e).getKeyCode()) {
                     // immediate
                     case 8:
@@ -575,40 +785,33 @@ public class Main extends JFrame {
                             console.deleteCharAt(console.length() - 1);
                         }
                         break;
-                    case 10:
-                        // submit console
-                        submitConsole();
+                    case 10: // enter
+                        enter(false);
                         break;
                     case 38: // up
-                        if (!network.waitingforplayers) {
-                            network.commands.add((keys[16] || keys[17] ? "SHOOT" : "MOVE") + " NORTH");
-                        }
+                        up();
                         break;
                     case 40: // down
-                        if (!network.waitingforplayers) {
-                            network.commands.add((keys[16] || keys[17] ? "SHOOT" : "MOVE") + " SOUTH");
-                        }
+                        down();
                         break;
                     case 37: // left
-                        if (!network.waitingforplayers) {
-                            network.commands.add((keys[16] || keys[17] ? "SHOOT" : "MOVE") + " WEST");
-                        }
+                        left();
                         break;
                     case 39: // right
-                        if (!network.waitingforplayers) {
-                            network.commands.add((keys[16] || keys[17] ? "SHOOT" : "MOVE") + " EAST");
-                        }
+                        right();
                         break;
-
                     case 27:
                         System.out.println("Exiting cleanly (escape pressed)...");
                         running = false;
                         break;
-                    case 112:
+                    case 112: // F1
                         overlaytoggle = !overlaytoggle;
                         break;
-                    case 113:
+                    case 113: // F2
                         network.commands.add(CMD_PLAYERS);
+                        break;
+                    case 114: // F3 - debug mode
+                        DEBUG = !DEBUG;
                         break;
                 }
 
@@ -635,14 +838,82 @@ public class Main extends JFrame {
         }
     }
 
-    private void submitConsole() {
+    private static void up() {
+        if (!controllerselected) {
+            SoundFactory.play(SoundFactory.A_BUMP, false, -1);
+            if (selection - 1 < -1) {
+                selection = alControllers.size() - 1;
+            } else {
+                selection--;
+            }
+
+            formControllersString();
+        } else if (!network.waitingforplayers) {
+            network.commands.add((anybutton || keys[16] || keys[17] ? CMD_SHOOT : CMD_MOVE) + " NORTH");
+        }
+    }
+
+    private static void down() {
+        if (!controllerselected) {
+            SoundFactory.play(SoundFactory.A_BUMP, false, -1);
+            if (selection + 1 > alControllers.size() - 1) {
+                selection = -1;
+            } else {
+                selection++;
+            }
+            formControllersString();
+        } else if (!network.waitingforplayers) {
+            network.commands.add((anybutton || keys[16] || keys[17] ? CMD_SHOOT : CMD_MOVE) + " SOUTH");
+        }
+    }
+
+    private static void left() {
+        if (!controllerselected) {
+        } else if (!network.waitingforplayers) {
+            network.commands.add((anybutton || keys[16] || keys[17] ? CMD_SHOOT : CMD_MOVE) + " WEST");
+        }
+    }
+
+    private static void right() {
+        if (!controllerselected) {
+        } else if (!network.waitingforplayers) {
+            network.commands.add((anybutton || keys[16] || keys[17] ? CMD_SHOOT : CMD_MOVE) + " EAST");
+        }
+    }
+
+    private static void enter(boolean gamepad) {
+        if (!controllerselected) {
+            SoundFactory.play(SoundFactory.A_WUMPUS_DEATH, false, -1);
+            controllerselected = true;
+            if (selection == -1) {
+                // keyboard
+                debug("Using keyboard");
+            } else {
+                actualController = Controllers.getController(selection);
+                debug("Using " + actualController.getName());
+            }
+        } else {
+            // submit console
+            if (gamepad) {
+                if (console.length() == 0 && network.firstresetroom) {
+                    // nada
+                } else {
+                    submitConsole();
+                }
+            } else {
+                submitConsole();
+            }
+        }
+    }
+
+    private static void submitConsole() {
         if (network != null) {
             if (console.length() == 0) {
                 console.append('\n');
             }
-            if (Main.DEBUG) {
-                System.out.println(console.toString());
-            }
+
+            debug(console.toString());
+
             if (console.indexOf(S_RECONNECT) == 0) {
                 String[] sa = console.toString().split("\\s");
                 SERVERIP = sa[1];
