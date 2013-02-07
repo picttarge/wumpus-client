@@ -1,0 +1,5 @@
+#!/bin/sh
+
+jarsigner -keystore wumpus.keystore -signedjar wumpus.jar dist/HuntTheWumpus-GlobalEdition.jar wumpus
+#jarsigner -keystore wumpus.keystore -signedjar media.jar sounds.jar wumpus
+

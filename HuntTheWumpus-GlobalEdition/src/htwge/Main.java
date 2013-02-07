@@ -27,7 +27,7 @@ import org.lwjgl.input.Controllers;
  */
 public class Main extends JFrame {
 
-    private static boolean DEBUG = true;
+    private static boolean DEBUG = false;
     static final String DEFAULT_SERVERIP = "electune.dyndns.org";
     static final int DEFAULT_SERVERPORT = 5000;
     static String S_TITLE = "Hunt The Wumpus : Global Edition";
@@ -323,7 +323,7 @@ public class Main extends JFrame {
             int ycentered = ((lines.length * linespace) >> 1);
             for (String x : lines) {
                 String trimmed = x.trim();
-                int xcentered = ((trimmed.length() * 14) >> 1);
+                int xcentered = ((trimmed.length() * 13) >> 1);
 
                 drawString(getIntArray(trimmed), (_w >> 1) - xcentered, (_h >> 1) - ycentered + (linespace * cnt), 2);
                 cnt++;
@@ -481,18 +481,28 @@ public class Main extends JFrame {
         }
     }
 
-    private static void loadProperties() {
-        properties = new Properties();
-        try {
-            properties.load(new FileReader("server.properties"));
-            SERVERIP = properties.getProperty("serverip", DEFAULT_SERVERIP);
-            SERVERPORT = Integer.parseInt(properties.getProperty("serverport", "" + DEFAULT_SERVERPORT));
-        } catch (IOException e) {
-            System.err.println("unable to load properties : need server.properties with serverip= and serverport=");
-            System.exit(1);
-        }
+    static boolean isRunningJavaWebStart() {
+        return System.getProperty("javawebstart.version", null) != null;
+    }
 
-        saveProperties();
+    private static void loadProperties() {
+
+        if (isRunningJavaWebStart()) {
+            SERVERIP = System.getProperty("serverip", DEFAULT_SERVERIP);
+            SERVERPORT = Integer.parseInt(System.getProperty("serverport", "" + DEFAULT_SERVERPORT));
+        } else {
+            properties = new Properties();
+            try {
+                properties.load(new FileReader("server.properties"));
+                SERVERIP = properties.getProperty("serverip", DEFAULT_SERVERIP);
+                SERVERPORT = Integer.parseInt(properties.getProperty("serverport", "" + DEFAULT_SERVERPORT));
+            } catch (IOException e) {
+                System.err.println("unable to load properties : need server.properties with serverip= and serverport=");
+                System.exit(1);
+            }
+
+            saveProperties();
+        }
     }
 
     private static void saveProperties() {

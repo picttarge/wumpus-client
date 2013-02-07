@@ -2,12 +2,19 @@ package htwge;
 
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
 import java.net.URL;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.security.CodeSource;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.openal.AL;
@@ -121,22 +128,59 @@ public class SoundFactory {
     Also note that these should be units of '1'. */
     private static FloatBuffer listenerOri = BufferUtils.createFloatBuffer(6).put(new float[]{0.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f});
 
-    static void init() {
+    static void init() throws IOException {
 
-        Main.debug("file.separator: " + System.getProperty("file.separator"));
         // load list from jar (jnlp support)
-        // getClass().getClassLoader().getResource
-        //URL url = SoundFactory.class.getResource(System.getProperty("file.separator")+"sounds");
-        URL url = SoundFactory.class.getClassLoader().getResource("sounds");
 
-        if (url == null) {
-            System.err.println("Unable to locate sounds and form URL");
-            initok = false;
-            return;
+        if (Main.isRunningJavaWebStart()) {
+            // because Java webstart doesn't like the idea of listing a directory
+            // from within a jar.
+            CodeSource src = SoundFactory.class.getProtectionDomain().getCodeSource();
+
+            if (src != null) {
+                URL jar = src.getLocation();
+                ZipInputStream stream = new ZipInputStream(jar.openStream());
+                try {
+                    ZipEntry entry;
+
+                    ArrayList<String> soundEntries = new ArrayList<String>();
+                    final String path = "sounds/";
+                    while ((entry = stream.getNextEntry()) != null) {
+
+                        if (entry.getName().startsWith(path) && entry.getSize() > 0) {
+                            soundEntries.add(entry.getName().replaceAll(path, ""));
+                            String s = String.format("Entry: %s len %d added %TD",
+                                entry.getName(), entry.getSize(),
+                                new Date(entry.getTime()));
+                            Main.debug(s);
+                        }
+                    }
+
+                    if (soundEntries.size() > 0) {
+                        soundFiles = soundEntries.toArray(new String[soundEntries.size()]);
+                    } else {
+                        Main.debug("Unable to get sound entries");
+                    }
+                } finally {
+                    // we must always close the zip file.
+                    stream.close();
+                }
+            } else {
+                System.err.println("Unable to get listing of sounds");
+            }
+        } else {
+            URL url = SoundFactory.class.getClassLoader().getResource("sounds");
+
+            if (url == null) {
+                System.err.println("Unable to locate sounds and form URL");
+                initok = false;
+                return;
+            }
+            File directory = new File(url.getFile());
+            FileListFilter filter = new FileListFilter("wav");
+            soundFiles = directory.list(filter);
         }
-        File directory = new File(url.getFile());
-        FileListFilter filter = new FileListFilter("wav");
-        soundFiles = directory.list(filter);
+
         if (soundFiles != null) {
             buffer = BufferUtils.createIntBuffer(soundFiles.length);
         } else {
