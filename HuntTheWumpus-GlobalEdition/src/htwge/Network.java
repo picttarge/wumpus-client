@@ -197,6 +197,7 @@ public class Network implements Runnable {
                         // special hooks
                         if (buffer.indexOf(DEATH) > -1) {
                             respawntimer = System.currentTimeMillis();
+                            spas12ammo = 8 + 1;
                         }
                         if (buffer.indexOf(SHOTGUN) > -1) {
                             pauseforshotgun = true;

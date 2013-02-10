@@ -28,7 +28,7 @@ import org.lwjgl.input.Controllers;
 public class Main extends JFrame {
 
     private static boolean DEBUG = false;
-    static final String DEFAULT_SERVERIP = "electune.dyndns.org";
+    static final String DEFAULT_SERVERIP = "ec2-54-234-158-48.compute-1.amazonaws.com";
     static final int DEFAULT_SERVERPORT = 5000;
     static String S_TITLE = "Hunt The Wumpus : Global Edition";
     static String S_RECONNECT = "reconnect";
@@ -89,6 +89,16 @@ public class Main extends JFrame {
     private static double[] buttonvalues;
     private static boolean anybutton = false;
     private static long anybuttontimer = 0;
+    private static final String _A = "A";
+    private static final String _B = "B";
+    private static final String _X = "X";
+    private static final String _Y = "Y";
+    private static final String _LEFTTHUMB = "Left Thumb";
+    private static final String _RIGHTTHUMB = "Right Thumb";
+    private static final String _SELECT = "Select";
+    private static final String _MODE = "Mode";
+    private static final String _LEFTTHUMB3 = "Left Thumb 3";
+    private static final String _RIGHTTHUMB3 = "Right Thumb 3";
 
     public static void debug(String s) {
         if (DEBUG) {
@@ -666,13 +676,21 @@ public class Main extends JFrame {
             }
             anybutton = false;
             for (int i = 0; i < actualController.getButtonCount(); i++) {
-                //debug(""+i+": "+buttons.get(i)+" => "+ actualController.isButtonPressed(i));
+//                debug(""+i+": "+buttons.get(i)+" => "+ actualController.isButtonPressed(i));
                 boolean newvalue = actualController.isButtonPressed(i);
                 if (buttonvalues[i] == 0 && newvalue) {
                     if (!controllerselected) {
                         SoundFactory.play(SoundFactory.A_SHOTGUN, false, -1);
                     }
-                    enter(true);
+
+                    if (buttons.get(i).equals(_MODE)) {
+                        network.commands.add(CMD_PLAYERS);
+                    } else if (buttons.get(i).equals(_LEFTTHUMB)
+                     || buttons.get(i).equals(_RIGHTTHUMB)) {
+                        overlaytoggle = !overlaytoggle;
+                    } else {
+                        enter(true);
+                    }
                 }
                 buttonvalues[i] = newvalue ? 1 : 0;
                 if (newvalue) {
@@ -685,30 +703,38 @@ public class Main extends JFrame {
 //            }
 
             int buttonCount = actualController.getButtonCount();
+            float threshold = 0.5f;
             for (int i = buttonCount; i < buttonCount + actualController.getAxisCount(); i++) {
-                //debug(""+i+": "+buttons.get(i)+" => "+ actualController.getAxisValue(i - buttonCount));
-                double newvalue = actualController.getAxisValue(i - buttonCount);
-                if (buttonvalues[i] == 0 && newvalue != 0) {
+                
+                float newvalue = actualController.getAxisValue(i - buttonCount);
+                if (buttonvalues[i] > -threshold 
+                        && buttonvalues[i] < threshold
+                        && (newvalue <= -threshold || newvalue >= threshold)) {
 
-                    if (i == 13) {
+
+                    //debug(""+i+". "+actualController.getAxisName(i- buttonCount)+" "+newvalue);
+                    if (i == 10) { // START on xbox pad
+                        enter(true);
+                    } else if (i == 12 || i == 15) {
+                        
                         if (!controllerselected) {
                             SoundFactory.play(SoundFactory.A_BUMP, false, -1);
                         }
                         // up and down
-                        if (newvalue < 0) {
+                        if (newvalue < -threshold) {
                             up();
-                        } else {
+                        } else if (newvalue > threshold) {
                             down();
                         }
-                    } else if (i == 12) {
+                    } else if (i == 11 || i == 14) {
 
                         // left and right
-                        if (newvalue < 0) {
+                        if (newvalue < -threshold) {
                             if (!controllerselected) {
                                 SoundFactory.playLeft(SoundFactory.A_BUMP, false);
                             }
                             left();
-                        } else {
+                        } else if (newvalue > threshold) {
                             if (!controllerselected) {
                                 SoundFactory.playRight(SoundFactory.A_BUMP, false);
                             }

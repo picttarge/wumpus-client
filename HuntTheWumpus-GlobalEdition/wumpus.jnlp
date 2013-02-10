@@ -1,5 +1,5 @@
 
-<jnlp spec="1.0+" codebase="http://localhost:8080/" href="wumpus.jnlp">
+<jnlp spec="1.0+" codebase="http://ec2-54-234-158-48.compute-1.amazonaws.com/" href="wumpus.jnlp">
   <information>
     <title>Hunt The Wumpus: Global Edition</title>
     <vendor>Vault101</vendor>
@@ -16,7 +16,7 @@
   <resources>
     <java version="1.6+"/>
     <jar href="wumpus.jar" download="eager" main="true"/>
-    <property name="serverip" value="localhost"/>
+    <property name="serverip" value="ec2-54-234-158-48.compute-1.amazonaws.com"/>
     <property name="serverport" value="5000"/>
     <property name="javawebstart.version" value="1.4"/>
     <extension href="http://lwjgl.org/webstart/2.8.5/extension.jnlp" name="lwjgl"/>
