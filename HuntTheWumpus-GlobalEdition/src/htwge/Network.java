@@ -102,7 +102,7 @@ public class Network implements Runnable {
 
                 if (history != null) {
                     if (history.size() == 0 || (history.size() > 0 && !rc.equals(history.getLast()))) {
-                        history.add(rc);
+                        addHistory(rc);
                     }
                 }
                 Main.debug("[NETWORK] Reconnecting: " + e.getMessage());
@@ -227,10 +227,10 @@ public class Network implements Runnable {
                         Main.debug("setting music to gain level, important?=" + importantsounds);
                         SoundFactory.setGain(SoundFactory.A_MUSIC, importantsounds ? 0.25f : 1.0f);
                     } else if (buffer.indexOf(CMD_SCOREBOARDTAG) > -1) {
-                        Main.overlaytoggle = true;
                         Main.overlaytext.append(buffer).append("\n");
                         if (buffer.indexOf("Wumpus") > -1) {
-                            history.add(buffer);
+                            Main.overlaytoggle = true;
+                            addHistory(buffer);
                         }
                     } else {
                         if (buffer.indexOf(S_WAITING_FOR_PLAYERS) > -1) {

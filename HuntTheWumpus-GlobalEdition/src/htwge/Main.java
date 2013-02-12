@@ -28,9 +28,9 @@ import org.lwjgl.input.Controllers;
 public class Main extends JFrame {
 
     private static boolean DEBUG = false;
-    static final String DEFAULT_SERVERIP = "ec2-54-234-158-48.compute-1.amazonaws.com";
+    static final String DEFAULT_SERVERIP = "wumpus.uk.to";
     static final int DEFAULT_SERVERPORT = 5000;
-    static String S_TITLE = "Hunt The Wumpus : Global Edition";
+    static String S_TITLE = "Hunt The Wumpus : Global Edition v1.4.2";
     static String S_RECONNECT = "reconnect";
     static String SERVERIP;
     static int SERVERPORT;

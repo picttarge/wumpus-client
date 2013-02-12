@@ -1,20 +1,16 @@
 package htwge;
 
+import com.jcraft.oggdecoder.OggData;
+import com.jcraft.oggdecoder.OggDecoder;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.security.CodeSource;
 import java.util.ArrayList;
-import java.util.Date;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipInputStream;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.openal.AL;
@@ -24,20 +20,24 @@ import org.lwjgl.util.WaveData;
 public class SoundFactory {
 
     private static final ClassLoader loader = SoundFactory.class.getClassLoader();
-    public static final String A_MUSIC = "music_darkestchild_incompetech.wav";
-    public static final String A_HEART_FAST = "loop_heartbeat_fast.wav";
-    public static final String A_HEART_MED = "loop_heartbeat.wav";
-    public static final String A_HEART_SLOW = "loop_heartbeat_slow.wav";
-    public static final String A_BEGIN = "begin.wav";
-    public static final String A_SPLAT = "splat0.wav";
-    public static final String A_SHOTGUN = "shotgun.wav";
-    public static final String A_WUMPUS_DEATH = "wumpus_death.wav";
-    public static final String A_RELOAD = "reload.wav";
-    public static final String A_FOOTSTEPS = "loop_footsteps.wav";
-    public static final String A_BUMP = "bump.wav";
-    public static final String A_STATIC = "loop_static.wav";
-    public static final String A_STEP = "step.wav";
-    public static final String A_AMMO = "ammo.wav";
+    public static final String A_MUSIC = "music_darkestchild_incompetech.ogg";
+    public static final String A_HEART_FAST = "loop_heartbeat_fast.ogg";
+    public static final String A_HEART_MED = "loop_heartbeat.ogg";
+    public static final String A_HEART_SLOW = "loop_heartbeat_slow.ogg";
+    public static final String A_BEGIN = "begin.ogg";
+    public static final String A_SPLAT = "splat0.ogg";
+    public static final String A_SHOTGUN = "shotgun.ogg";
+    public static final String A_WUMPUS_DEATH = "wumpus_death.ogg";
+    public static final String A_RELOAD = "reload.ogg";
+    public static final String A_FOOTSTEPS = "loop_footsteps.ogg";
+    public static final String A_BUMP = "bump.ogg";
+    public static final String A_STATIC = "loop_static.ogg";
+    public static final String A_STEP = "step.ogg";
+    public static final String A_AMMO = "ammo.ogg";
+    private static String[] soundFiles = new String[]{
+        A_AMMO, A_BEGIN, A_BUMP, A_FOOTSTEPS, A_HEART_FAST, A_HEART_MED, A_HEART_SLOW,
+        A_MUSIC, A_RELOAD, A_SHOTGUN, A_SPLAT, A_STATIC, A_STEP, A_WUMPUS_DEATH
+    };
     public static final HashMap<String, Integer> sourcemap = new HashMap<String, Integer>();
     public static final HashSet<String> playing = new HashSet<String>();
 
@@ -108,7 +108,6 @@ public class SoundFactory {
     public static final int MAX_BUFFERS = 128;
     public static final ArrayList<String> soundsToProcess = new ArrayList<String>();
     public static final ArrayList<String> serverSoundList = new ArrayList<String>();
-    private static String[] soundFiles;
     private static ArrayList<String> accessFiles = new ArrayList<String>();
     /** Buffers hold sound data. */
     private static IntBuffer buffer;
@@ -132,54 +131,7 @@ public class SoundFactory {
 
         // load list from jar (jnlp support)
 
-        if (Main.isRunningJavaWebStart()) {
-            // because Java webstart doesn't like the idea of listing a directory
-            // from within a jar.
-            CodeSource src = SoundFactory.class.getProtectionDomain().getCodeSource();
 
-            if (src != null) {
-                URL jar = src.getLocation();
-                ZipInputStream stream = new ZipInputStream(jar.openStream());
-                try {
-                    ZipEntry entry;
-
-                    ArrayList<String> soundEntries = new ArrayList<String>();
-                    final String path = "sounds/";
-                    while ((entry = stream.getNextEntry()) != null) {
-
-                        if (entry.getName().startsWith(path) && entry.getSize() > 0) {
-                            soundEntries.add(entry.getName().replaceAll(path, ""));
-                            String s = String.format("Entry: %s len %d added %TD",
-                                entry.getName(), entry.getSize(),
-                                new Date(entry.getTime()));
-                            Main.debug(s);
-                        }
-                    }
-
-                    if (soundEntries.size() > 0) {
-                        soundFiles = soundEntries.toArray(new String[soundEntries.size()]);
-                    } else {
-                        Main.debug("Unable to get sound entries");
-                    }
-                } finally {
-                    // we must always close the zip file.
-                    stream.close();
-                }
-            } else {
-                System.err.println("Unable to get listing of sounds");
-            }
-        } else {
-            URL url = SoundFactory.class.getClassLoader().getResource("sounds");
-
-            if (url == null) {
-                System.err.println("Unable to locate sounds and form URL");
-                initok = false;
-                return;
-            }
-            File directory = new File(url.getFile());
-            FileListFilter filter = new FileListFilter("wav");
-            soundFiles = directory.list(filter);
-        }
 
         if (soundFiles != null) {
             buffer = BufferUtils.createIntBuffer(soundFiles.length);
@@ -232,20 +184,54 @@ public class SoundFactory {
             accessFiles.add(i, soundFiles[i]);
 
             URL url = Main.class.getResource("/sounds/" + soundFiles[i]);
-            waveFile = WaveData.create(url);
 
-            if (buffer == null) {
-                System.err.println("AL buffer is null");
-                System.exit(1);
+            if (soundFiles[i].endsWith(".ogg")) {
+
+                // Create OGG Decoder
+                OggDecoder oggDecoder = new OggDecoder();
+
+                // Decode OGG into PCM
+                OggData oggData = null;
+                try {
+                    oggData = oggDecoder.getData(url.openStream());
+                } catch (IOException e) {
+                    System.err.println("IOException with loading ogg file: "+soundFiles[i]+" "+e.getMessage());
+                }
+
+                if (oggData == null) {
+                    System.err.println("oggData is null for "+soundFiles[i]);
+                    return AL10.AL_FALSE;
+                }
+                // Load PCM data into buffer
+                AL10.alBufferData(
+                        buffer.get(i),
+                        oggData.channels > 1
+                        ? AL10.AL_FORMAT_STEREO16 : AL10.AL_FORMAT_MONO16,
+                        oggData.data,
+                        oggData.rate);
+                errcode = AL10.alGetError();
+                if (errcode != AL10.AL_NO_ERROR) {
+                    Main.debug("[AL] OGG Error code: " + errcode);
+                    return AL10.AL_FALSE;
+                }
+            } else {
+
+                waveFile = WaveData.create(url);
+
+                if (buffer == null) {
+                    System.err.println("AL buffer is null");
+                    System.exit(1);
+                }
+
+                if (waveFile == null) {
+                    System.err.println("AL waveFile is null");
+                    System.exit(1);
+                }
+
+                AL10.alBufferData(buffer.get(i), waveFile.format, waveFile.data, waveFile.samplerate);
+                waveFile.dispose();
+
             }
-
-            if (waveFile == null) {
-                System.err.println("AL waveFile is null");
-                System.exit(1);
-            }
-
-            AL10.alBufferData(buffer.get(i), waveFile.format, waveFile.data, waveFile.samplerate);
-            waveFile.dispose();
         }
         // Do another error check and return.
         errcode = AL10.alGetError();
